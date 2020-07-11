@@ -34,7 +34,6 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 apply plugin: 'kotlin-kapt'
 apply plugin: 'jacoco'
-apply plugin: 'com.jaredsburrows.license'
 
 detekt {
     failFast = false
@@ -124,13 +123,6 @@ task updateLicensesJson(dependsOn: 'licenseProdReleaseReport') {
         File out = new File("$project.projectDir/src/main/assets/open_source_licenses.js")
         out.text = 'dependencies = ' + json.text
     }
-}
-
-licenseReport {
-    generateHtmlReport = false
-    generateJsonReport = true
-    copyHtmlReportToAssets = false
-    copyJsonReportToAssets = false
 }
 
 def productionServer = "\"api.protonvpn.ch\""
@@ -560,6 +552,8 @@ dependencies {
     implementation 'org.minidns:minidns-hla:0.3.4'
     implementation 'com.github.tony19:logback-android:2.0.0'
     implementation 'org.slf4j:slf4j-api:1.7.30'
+
+    implementation "com.airbnb.android:lottie:3.4.1"
 
     // https://github.com/grpc/grpc-java/issues/3633 https://github.com/google/dagger/issues/1449
     implementation 'com.github.pengrad:jdk9-deps:1.0'

@@ -69,9 +69,9 @@ android {
 
         externalNativeBuild {
             cmake {
-                //arguments = listOf("-DANDROID_TOOLCHAIN=clang",
-                //        "-DANDROID_STL=c++_static")
-                //abiFilters "arm64-v8a"
+//                arguments.addAll(listOf("-DANDROID_TOOLCHAIN=clang",
+//                        "-DANDROID_STL=c++_static"))
+//                abiFilters.add("arm64-v8a")
             }
         }
     }

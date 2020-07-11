@@ -21,21 +21,18 @@ package com.protonvpn.android.ui.home;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.GravityCompat;
+
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.afollestad.materialdialogs.Theme;
-import com.github.clans.fab.FloatingActionButton;
-import com.github.clans.fab.FloatingActionMenu;
-import com.google.android.material.tabs.TabLayout;
-import com.jakewharton.rxbinding2.support.design.widget.RxTabLayout;
 import com.protonvpn.android.BuildConfig;
 import com.protonvpn.android.R;
 import com.protonvpn.android.api.ProtonApiRetroFit;
@@ -47,50 +44,29 @@ import com.protonvpn.android.bus.ForcedLogout;
 import com.protonvpn.android.bus.VpnStateChanged;
 import com.protonvpn.android.components.ContentLayout;
 import com.protonvpn.android.components.LoaderUI;
-import com.protonvpn.android.components.MinimizedNetworkLayout;
-import com.protonvpn.android.components.ProtonActionMenu;
-import com.protonvpn.android.components.ReversedList;
 import com.protonvpn.android.components.SecureCoreCallback;
-import com.protonvpn.android.components.ViewPagerAdapter;
 import com.protonvpn.android.migration.NewAppMigrator;
 import com.protonvpn.android.models.config.UserData;
-import com.protonvpn.android.models.login.VpnInfoResponse;
 import com.protonvpn.android.models.profiles.Profile;
-import com.protonvpn.android.ui.login.LoginActivity;
 import com.protonvpn.android.ui.drawer.AccountActivity;
 import com.protonvpn.android.ui.drawer.ReportBugActivity;
 import com.protonvpn.android.ui.drawer.SettingsActivity;
-import com.protonvpn.android.ui.home.countries.CountryListFragment;
-import com.protonvpn.android.ui.home.map.MapFragment;
-import com.protonvpn.android.ui.home.profiles.ProfilesFragment;
-import com.protonvpn.android.ui.onboarding.OnboardingDialogs;
-import com.protonvpn.android.ui.onboarding.OnboardingPreferences;
+import com.protonvpn.android.ui.home.vpnstate.NewVpnStateFragment;
+import com.protonvpn.android.ui.login.LoginActivity;
 import com.protonvpn.android.utils.AndroidUtils;
-import com.protonvpn.android.utils.AnimationTools;
 import com.protonvpn.android.utils.HtmlTools;
 import com.protonvpn.android.utils.Log;
 import com.protonvpn.android.utils.ServerManager;
 import com.protonvpn.android.utils.Storage;
 import com.protonvpn.android.vpn.LogActivity;
-import com.protonvpn.android.vpn.VpnStateFragment;
 import com.protonvpn.android.vpn.VpnStateMonitor;
 import com.squareup.otto.Subscribe;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.util.List;
-
 import javax.inject.Inject;
 
-import androidx.annotation.DrawableRes;
-import androidx.annotation.NonNull;
-import androidx.appcompat.widget.SwitchCompat;
-import androidx.coordinatorlayout.widget.CoordinatorLayout;
-import androidx.core.content.ContextCompat;
-import androidx.core.view.GravityCompat;
-import androidx.viewpager.widget.ViewPager;
 import butterknife.BindView;
-import butterknife.OnCheckedChanged;
 import butterknife.OnClick;
 import io.sentry.Sentry;
 import io.sentry.event.UserBuilder;
@@ -99,18 +75,12 @@ import kotlin.Unit;
 @ContentLayout(R.layout.activity_home)
 public class HomeActivity extends PoolingActivity implements SecureCoreCallback {
 
-    @BindView(R.id.viewPager) ViewPager viewPager;
-    @BindView(R.id.tabs) TabLayout tabs;
-    @BindView(R.id.fabQuickConnect) ProtonActionMenu fabQuickConnect;
     @BindView(R.id.coordinator) CoordinatorLayout coordinator;
     @BindView(R.id.textUser) TextView textUser;
     @BindView(R.id.textTier) TextView textTier;
     @BindView(R.id.textVersion) TextView textVersion;
-    @BindView(R.id.minimizedLoader) MinimizedNetworkLayout minimizedLoader;
-    @BindView(R.id.switchSecureCoreLayout) LinearLayout switchSecureCoreLayout;
-    VpnStateFragment fragment;
-    public @BindView(R.id.switchSecureCore) SwitchCompat switchSecureCore;
     boolean doubleBackToExitPressedOnce = false;
+    NewVpnStateFragment fragment;
 
     @Inject ProtonApiRetroFit api;
     @Inject ServerManager serverManager;
@@ -126,33 +96,21 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
         getSupportActionBar().setTitle(HtmlTools.fromHtml(getString(R.string.toolbar_app_title)));
         initDrawer();
         initDrawerView();
-        fragment = (VpnStateFragment) getSupportFragmentManager().findFragmentById(R.id.vpnStatusBar);
-        switchSecureCore.setChecked(userData.isSecureCoreEnabled());
+        fragment = (NewVpnStateFragment) getSupportFragmentManager().findFragmentById(R.id.vpnStatusFragment);
+
         Sentry.getContext().setUser(new UserBuilder().setUsername(userData.getUser()).build());
         checkForUpdate();
         if (serverManager.isDownloadedAtLeastOnce() || serverManager.isOutdated()) {
             initLayout();
         }
-        else {
-            minimizedLoader.switchToEmpty();
-        }
-        if (serverManager.isDownloadedAtLeastOnce()) {
-            initOnboarding();
-        }
 
         serverManager.getUpdateEvent().observe(this, () -> {
             if (serverManager.isDownloadedAtLeastOnce()) {
-                initOnboarding();
                 EventBus.post(new VpnStateChanged(userData.isSecureCoreEnabled()));
             }
             else {
                 initLayout();
             }
-            return Unit.INSTANCE;
-        });
-
-        serverManager.getProfilesUpdateEvent().observe(this, () -> {
-            initQuickConnectFab();
             return Unit.INSTANCE;
         });
 
@@ -176,74 +134,14 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
         dialog.create().show();
     }
 
-    @Override
-    public void onTrialEnded() {
-        vpnStateMonitor.disconnect();
-        switchSecureCore.setChecked(false);
-    }
-
     private void checkForUpdate() {
         int versionCode = Storage.getInt("VERSION_CODE");
         Storage.saveInt("VERSION_CODE", BuildConfig.VERSION_CODE);
     }
 
-    public boolean isBottomSheetExpanded() {
-        return fragment.isBottomSheetExpanded();
-    }
-
-    private void initStatusBar() {
-        fragment.initStatusLayout(fabQuickConnect);
-        if (getIntent().getBooleanExtra("OpenStatus", false)) {
-            fragment.openBottomSheet();
-        }
-    }
-
     @SuppressLint("CheckResult")
     private void initLayout() {
-        tabs.setVisibility(View.VISIBLE);
-        final ViewPagerAdapter adapter = new ViewPagerAdapter(getSupportFragmentManager());
-        adapter.addFrag(new CountryListFragment(), getString(R.string.tabsCountries));
-        adapter.addFrag(MapFragment.newInstance(), getString(R.string.tabsMap));
-        adapter.addFrag(new ProfilesFragment(), getString(R.string.tabsProfiles));
-        viewPager.setAdapter(adapter);
 
-        tabs.setupWithViewPager(viewPager);
-        RxTabLayout.selectionEvents(tabs)
-            .subscribe(tabLayoutSelectionEvent -> fragment.collapseBottomSheet());
-        RxTabLayout.selections(tabs).subscribe(tab -> {
-            if (tab.isSelected()) {
-                View tabView = ((LinearLayout) tabs.getChildAt(0)).getChildAt(tab.getPosition());
-                if (getString(R.string.tabsMap).equals(tab.getText().toString())
-                    && !isBottomSheetExpanded()) {
-                    OnboardingDialogs.showDialogOnView(getContext(), tabView, getString(R.string.tabsMap),
-                        getString(R.string.onboardingDialogMapView), OnboardingPreferences.MAPVIEW_DIALOG);
-                }
-                if (getString(R.string.tabsProfiles).equals(tab.getText().toString())
-                    && !isBottomSheetExpanded() && OnboardingPreferences.wasFloatingButtonUsed()) {
-                    OnboardingDialogs.showDialogOnView(getContext(), tabView,
-                        getString(R.string.tabsProfiles), getString(R.string.onboardingDialogProfiles),
-                        OnboardingPreferences.PROFILES_DIALOG);
-                }
-                if (getString(R.string.tabsCountries).equals(tab.getText().toString())
-                    && OnboardingPreferences.wasFloatingButtonUsed() && !vpnStateMonitor.isConnected()
-                    && !isBottomSheetExpanded()) {
-                    OnboardingDialogs.showDialogOnView(getContext(), tabView,
-                        getString(R.string.tabsCountries), getString(R.string.onboardingListDescription),
-                        OnboardingPreferences.COUNTRY_DIALOG);
-                }
-            }
-        });
-
-        AnimationTools.addScaleAnimationToMenuIcon(fabQuickConnect);
-        initStatusBar();
-        fabQuickConnect.setVisibility(View.VISIBLE);
-        initQuickConnectFab();
-    }
-
-    private void initOnboarding() {
-        OnboardingDialogs.showDialogOnView(this, fabQuickConnect.getActionButton(),
-            getString(R.string.onboardingFAB), getString(R.string.onboardingFABDescription),
-            OnboardingPreferences.FLOATINGACTION_DIALOG, Gravity.TOP);
     }
 
     private void initDrawerView() {
@@ -305,7 +203,7 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
     @Override
     public void onNewIntent(Intent intent) {
         if (intent.getBooleanExtra("OpenStatus", false)) {
-            fragment.openBottomSheet();
+//            fragment.openBottomSheet();
         }
         super.onNewIntent(intent);
     }
@@ -340,140 +238,18 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
         navigateTo(LoginActivity.class);
     }
 
-    private void initQuickConnectFab() {
-        fabQuickConnect.removeAllMenuButtons();
-        fabQuickConnect.setMenuButtonColorNormalResId(
-            vpnStateMonitor.isConnected() ? R.color.colorAccent : R.color.darkGrey);
-        fabQuickConnect.getMenuIconView().setImageResource(R.drawable.ic_proton);
-        fabQuickConnect.setOnMenuButtonClickListener(view -> {
-            if (fabQuickConnect.isOpened()) {
-                fabQuickConnect.close(true);
-                fabQuickConnect.setMenuButtonColorNormalResId(
-                    vpnStateMonitor.isConnected() ? R.color.colorAccent : R.color.darkGrey);
-            }
-            else {
-                if (!vpnStateMonitor.isConnected()) {
-                    Profile profile = serverManager.getDefaultConnection();
-                    if (profile != null) {
-                        onConnectToProfile(new ConnectToProfile(profile));
-                    }
-                }
-                else {
-                    vpnStateMonitor.disconnect();
-                }
 
-                if (!vpnStateMonitor.isConnected()) {
-                    Storage.saveBoolean(OnboardingPreferences.FLOATING_BUTTON_USED, true);
-                    Storage.saveBoolean(OnboardingPreferences.FLOATINGACTION_DIALOG, true);
-                }
-            }
-        });
-        fabQuickConnect.setOnMenuButtonLongClickListener(view -> {
-            if (!fabQuickConnect.isOpened() && OnboardingPreferences.wasFloatingButtonUsed()) {
-                fabQuickConnect.open(true);
-                fabQuickConnect.setMenuButtonColorNormalResId(R.color.darkGrey);
-            }
-            return true;
-        });
-        fabQuickConnect.setClosedOnTouchOutside(true);
-
-        if (serverManager.getSavedProfiles().size() >= 6) {
-            addActionButtonToFab(fabQuickConnect, Color.parseColor("#27272c"),
-                getString(R.string.showAllProfiles), R.drawable.ic_zoom_out, v -> {
-                    viewPager.setCurrentItem(2);
-                    fabQuickConnect.close(true);
-                });
-        }
-
-        List<Profile> profileList = serverManager.getSavedProfiles();
-        for (final Profile profile : ReversedList.reverse(
-            profileList.subList(0, profileList.size() >= 6 ? 6 : profileList.size()))) {
-            addActionButtonToFab(fabQuickConnect, Color.parseColor(profile.getColor()), profile.getDisplayName(getContext()),
-                profile.getProfileIcon(), v -> {
-                    onConnectToProfile(new ConnectToProfile(profile));
-                    fabQuickConnect.close(true);
-                });
-        }
-
-        if (vpnStateMonitor.isConnected()) {
-            addActionButtonToFab(fabQuickConnect, Color.RED, getString(R.string.disconnect),
-                R.drawable.ic_notification_disconnected, v -> {
-                    vpnStateMonitor.disconnect();
-                    fabQuickConnect.close(true);
-                });
-        }
-        fabQuickConnect.onboardingAnimation();
-    }
-
-    private void addActionButtonToFab(FloatingActionMenu actionsMenu, int color, String name,
-                                      @DrawableRes int icon, View.OnClickListener listener) {
-        FloatingActionButton button = new FloatingActionButton(getContext());
-        button.setColorNormal(color);
-        button.setColorPressed(ContextCompat.getColor(getContext(), R.color.darkGrey));
-        button.setButtonSize(1);
-        button.setImageResource(icon);
-        button.setLabelText(name);
-        button.setOnClickListener(listener);
-        actionsMenu.addMenuButton(button);
-    }
-
-    @OnCheckedChanged(R.id.switchSecureCore)
-    public void switchSecureCore(final SwitchCompat switchCompat, final boolean isChecked) {
-        if (vpnStateMonitor.isConnected() && (!vpnStateMonitor.isConnectingToSecureCore() && isChecked) || (
-            vpnStateMonitor.isConnectingToSecureCore() && !isChecked)) {
-            new MaterialDialog.Builder(getContext()).title(R.string.warning)
-                .theme(Theme.DARK)
-                .content(R.string.disconnectDialogDescription)
-                .cancelable(false)
-                .positiveText(R.string.yes)
-                .negativeText(R.string.no)
-                .negativeColor(ContextCompat.getColor(this, R.color.white))
-                .onPositive((dialog, which) -> {
-                    postSecureCoreSwitched(switchCompat);
-                    vpnStateMonitor.disconnect();
-                })
-                .onNegative((materialDialog, dialogAction) -> switchCompat.setChecked(!isChecked))
-                .show();
-        }
-        else {
-            postSecureCoreSwitched(switchCompat);
-        }
-    }
 
     // FIXME: API needs to inform app of changes, not other way
     @Override
     public void onResume() {
         super.onResume();
-        if (!userData.wasVpnInfoRecentlyUpdated(3)) {
-            api.getVPNInfo(this::checkTrialChange);
-        }
-    }
-
-    private void checkTrialChange(VpnInfoResponse result) {
-        if (!result.equals(userData.getVpnInfoResponse())) {
-            serverListUpdater.getServersList(this);
-            initDrawerView();
-            shouldExpiredDialog(result);
-            userData.setVpnInfoResponse(result);
-            EventBus.post(new VpnStateChanged(userData.isSecureCoreEnabled()));
-        }
-    }
-
-    private void postSecureCoreSwitched(final SwitchCompat switchCompat) {
-        OnboardingDialogs.showDialogOnView(getContext(), switchCompat,
-            getString(R.string.onboardingDialogSecureCoreTitle),
-            getString(R.string.onboardingDialogSecureCoreDescription),
-            OnboardingPreferences.SECURECORE_DIALOG);
-        switchSecureCoreLayout.setBackgroundColor(ContextCompat.getColor(getContext(),
-            switchCompat.isChecked() ? R.color.colorAccent : R.color.grey));
-        userData.setSecureCoreEnabled(switchCompat.isChecked());
-        EventBus.post(new VpnStateChanged(switchCompat.isChecked()));
     }
 
     @Override
     public LoaderUI getNetworkFrameLayout() {
         if (serverManager.isDownloadedAtLeastOnce()) {
-            return minimizedLoader;
+            return fragment;
         }
         else {
             return getLoadingContainer();
@@ -486,22 +262,8 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
             userData.setSecureCoreEnabled(server.getServer().isSecureCoreServer());
         }
         EventBus.post(new VpnStateChanged(userData.isSecureCoreEnabled()));
-        switchSecureCore.setChecked(userData.isSecureCoreEnabled());
-        initQuickConnectFab();
     }
 
-    @Subscribe
-    public void onVpnStateChange(VpnStateChanged change) {
-        switchSecureCore.setChecked(change.isSecureCoreEnabled());
-    }
-
-    private boolean shouldCloseFab() {
-        if (fabQuickConnect.isOpened()) {
-            fabQuickConnect.close(true);
-            return true;
-        }
-        return false;
-    }
 
     private boolean shouldCloseDrawer() {
         if (getDrawer().isDrawerOpen(GravityCompat.START)) {
@@ -513,7 +275,7 @@ public class HomeActivity extends PoolingActivity implements SecureCoreCallback 
 
     @Override
     public void onBackPressed() {
-        if (!shouldCloseDrawer() && !fragment.collapseBottomSheet() && !shouldCloseFab()) {
+        if (!shouldCloseDrawer()) {
             if (doubleBackToExitPressedOnce) {
                 this.moveTaskToBack(true);
                 return;
